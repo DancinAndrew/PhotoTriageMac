@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>CFBundleExecutable</key><string>PhotoTriageMac</string>
+    <key>CFBundleIdentifier</key><string>local.phototriage.mac</string>
+    <key>CFBundleName</key><string>Photo Triage Organizer</string>
+    <key>CFBundleDisplayName</key><string>相片整理</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>0.4.0</string>
+    <key>CFBundleVersion</key><string>9</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>LSApplicationCategoryType</key><string>public.app-category.photography</string>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>讀取照片縮圖、時間、位置與相簿供你分類。新增、命名、移除相簿與成員調整只儲存在本機，不會修改 Apple 照片、刪除照片、下載原始檔或上傳圖片。</string>
+    <key>PHPhotoLibraryPreventAutomaticLimitedAccessAlert</key><true/>
+</dict></plist>

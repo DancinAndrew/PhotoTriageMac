@@ -1,0 +1,8 @@
+Offline country boundaries and populated-place references: Natural Earth, public domain.
+https://www.naturalearthdata.com/about/
+https://github.com/nvkelso/natural-earth-vector
+Inputs: ne_10m_admin_0_countries, ne_10m_populated_places_simple (retrieved 2026-10-05).
+Map-scale polygons and nearest city names are approximate context, not exact addresses.
+The small-island review extents for Lanyu, Penghu and Green Island supplement islands
+omitted at this scale; they are broad candidate areas, not surveyed borders.
+Photos coordinates are resolved entirely offline and never sent to a map service.
