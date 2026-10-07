@@ -66,6 +66,8 @@ When no recent valid album exists, the complete-batch action opens the chooser. 
 
 `bash scripts/verify.sh` runs read-only Photos API checks, publication-content checks and the Swift test suite. Tests use fictional data and temporary profiles. Coverage includes combined filters, recent targets, repeated actions, mixed review states, paired undo after restart, interrupted saves, stale writes, empty data, denied access, missing metadata and native view rendering offscreen. CI also builds and verifies the macOS app signature.
 
+The full suite includes 103 tests. The hosted Intel CI VM skips one GPU-dependent grid scroll/resize geometry test because its Metal driver has no usable target architecture. The other native offscreen view tests still run. Run the full suite on a physical Mac to verify that geometry test; it passes on the locally tested Apple Silicon Mac.
+
 Event and travel suggestions are approximate and should be reviewed. No background synchronization, automatic deletion, pixel-level duplicate detection, original-resource fetching or video playback is implemented. General Photos album writes or deletions would require a separately reviewed implementation and explicit user confirmation. Historical task-specific mutation jobs are intentionally absent from this public source.
 
 ## Attribution and licensing

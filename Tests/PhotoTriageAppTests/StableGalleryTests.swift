@@ -6,6 +6,11 @@ import PhotoTriageCore
 
 final class StableGalleryTests: XCTestCase {
     func testNativeCardFramesAndScrollStayStableAcrossSelectionInspectorAndSelectAll() async throws {
+        #if arch(x86_64)
+        if ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true" {
+            throw XCTSkip("GitHub's Intel macOS VM has no usable Metal target architecture for this SwiftUI scroll/resize test. Run it on a physical Mac.")
+        }
+        #endif
         try await MainActor.run {
             _ = NSApplication.shared
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("GalleryGeometry-\(UUID())")
@@ -22,13 +27,13 @@ final class StableGalleryTests: XCTestCase {
             let host = NSHostingView(rootView: content)
             host.frame = NSRect(x: 0, y: 0, width: 1320, height: 850)
             host.autoresizingMask = [.width, .height]; window.contentView = host
-            func settle() {
+            @MainActor func settle() {
                 for _ in 0..<6 {
                     host.layoutSubtreeIfNeeded(); host.displayIfNeeded()
                     RunLoop.current.run(until: Date().addingTimeInterval(0.025))
                 }
             }
-            func compare(_ before: [String: CGRect], file: StaticString = #filePath, line: UInt = #line) {
+            @MainActor func compare(_ before: [String: CGRect], file: StaticString = #filePath, line: UInt = #line) {
                 let common = Set(before.keys).intersection(frames.keys)
                 XCTAssertGreaterThanOrEqual(common.count, 4, file: file, line: line)
                 for id in common {
@@ -48,7 +53,7 @@ final class StableGalleryTests: XCTestCase {
             model.inspectorVisible = true; model.select(ids[5], modifiers: .command); settle(); compare(initial)
             model.selectAll(); settle(); compare(initial)
             model.clearSelection(); settle(); compare(initial)
-            func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+            @MainActor func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
             let scroll = try XCTUnwrap(descendants(host).compactMap { $0 as? NSScrollView }.first { $0.bounds.width > 400 })
             scroll.contentView.scroll(to: NSPoint(x: 0, y: 300)); scroll.reflectScrolledClipView(scroll.contentView); settle()
             let offset = scroll.contentView.bounds.origin.y
