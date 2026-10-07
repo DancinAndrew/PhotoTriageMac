@@ -26,7 +26,7 @@ struct StablePhotoWorkspace: View {
             Divider()
             inspector.frame(width: 248).frame(maxHeight: .infinity, alignment: .top)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            .onPreferenceChange(GalleryFramesKey.self) { reportFrames?($0) }
+            .onPreferenceChange(GalleryFramesKey.self) { model.recordGalleryFrames($0); reportFrames?($0) }
     }
     private var grid: some View {
         GeometryReader { geometry in
@@ -45,12 +45,20 @@ struct StablePhotoWorkspace: View {
                             }
                         }.frame(width: max(1, geometry.size.width - 44), alignment: .topLeading).padding(22)
                     }
+                    Color.clear.frame(height: 0).background(GalleryScrollPersistence(model: model))
                 }.frame(width: geometry.size.width, height: geometry.size.height)
                     .coordinateSpace(name: "galleryViewport")
-                    .accessibilityIdentifier("photoGridViewport")
+                    .accessibilityIdentifier("photoGridViewport").qaControl("photoGridViewport")
                     .onChange(of: model.scrollTargetID) { _, id in
                         // Only explicit keyboard navigation requests scrolling, never a mouse click or Select All.
                         if let id { proxy.scrollTo(id, anchor: .center) }
+                    }
+                    .task(id: model.viewportAnchorToMount) {
+                        guard let id = model.viewportAnchorToMount else { return }
+                        // Mount distant lazy rows first, then restore the saved offset once.
+                        proxy.scrollTo(id, anchor: .top)
+                        do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+                        model.completeAnchorMount(id)
                     }
             }
         }
@@ -65,11 +73,11 @@ struct StablePhotoWorkspace: View {
                     Text(model.focusedRecord == nil ? "選取照片查看資訊。" : "照片資訊已收合。")
                         .font(.callout).foregroundStyle(.secondary)
                     if model.focusedRecord != nil {
-                        Button("顯示照片資訊") { model.inspectorVisible = true }.accessibilityIdentifier("showInspector")
+                        Button("顯示照片資訊") { model.inspectorVisible = true }.accessibilityIdentifier("showInspector").qaControl("showInspector")
                     }
                     Spacer()
                 }.padding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-        }.background(.white.opacity(0.65)).accessibilityIdentifier("photoInspectorSlot")
+        }.background(.white.opacity(0.65)).accessibilityIdentifier("photoInspectorSlot").qaControl("photoInspectorSlot")
     }
 }

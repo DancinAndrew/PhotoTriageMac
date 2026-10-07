@@ -40,11 +40,11 @@ struct LocalAlbumSheet: View {
                         ForEach(model.organizerAlbums.filter { !$0.sourceUnavailable }) { value in
                             Text(pickerLabel(value)).tag(value.id)
                         }
-                    }.accessibilityIdentifier("localAlbumTarget")
+                    }.accessibilityIdentifier("localAlbumTarget").qaControl("localAlbumTarget")
                 }
                 if !isAdding || target == "new" {
                     TextField("相簿名稱", text: $name).textFieldStyle(.roundedBorder)
-                        .accessibilityIdentifier("localAlbumName")
+                        .accessibilityIdentifier("localAlbumName").qaControl("localAlbumName")
                 }
                 if action == .create, !model.selected.isEmpty {
                     Toggle("一併加入目前選取的 \(model.selected.count) 張照片", isOn: $includeSelection)
@@ -60,7 +60,7 @@ struct LocalAlbumSheet: View {
                             ForEach(model.recentDestinationAlbums.prefix(3)) { value in
                                 Button(value.title) { target = value.id }.lineLimit(1)
                             }
-                        }.font(.caption).accessibilityIdentifier("recentAlbumDestinations")
+                        }.font(.caption).accessibilityIdentifier("recentAlbumDestinations").qaControl("recentAlbumDestinations")
                     }
                 }
             }
@@ -71,23 +71,23 @@ struct LocalAlbumSheet: View {
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
-            if let error { Text(error).foregroundStyle(.red).font(.callout).accessibilityIdentifier("localAlbumValidationError") }
+            if let error { Text(error).foregroundStyle(.red).font(.callout).accessibilityIdentifier("localAlbumValidationError").qaControl("localAlbumValidationError") }
             Divider()
             HStack {
-                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction).accessibilityIdentifier("cancelLocalAlbum")
+                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction).accessibilityIdentifier("cancelLocalAlbum").qaControl("cancelLocalAlbum")
                 Spacer()
                 if isAdding {
                     Button("只加入相簿") { save(completeReview: false) }
                         .keyboardShortcut(action == .addSelection ? KeyboardShortcut.defaultAction : nil)
                         .disabled(!model.canManageAlbums || model.actionableAlbumIDs.isEmpty)
-                        .accessibilityIdentifier("confirmLocalAlbum")
+                        .accessibilityIdentifier("confirmLocalAlbum").qaControl("confirmLocalAlbum")
                     Button("加入並完成這批") { save(completeReview: true) }.buttonStyle(.borderedProminent)
                         .keyboardShortcut(action == .addSelectionAndComplete ? KeyboardShortcut.defaultAction : nil)
                         .disabled(!model.canManageAlbums || model.actionableAlbumIDs.isEmpty)
-                        .accessibilityIdentifier("confirmAlbumAndComplete")
+                        .accessibilityIdentifier("confirmAlbumAndComplete").qaControl("confirmAlbumAndComplete")
                 } else {
                     Button(title) { save() }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
-                        .disabled(!model.canManageAlbums).accessibilityIdentifier("confirmLocalAlbum")
+                        .disabled(!model.canManageAlbums).accessibilityIdentifier("confirmLocalAlbum").qaControl("confirmLocalAlbum")
                 }
             }
         }.padding(26).frame(width: 540).tint(Theme.accent)

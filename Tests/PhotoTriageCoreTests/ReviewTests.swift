@@ -77,7 +77,7 @@ final class ReviewTests: XCTestCase {
         XCTAssertEqual(decision.albumPlans, [plan])
         XCTAssertEqual(decision.status, .deleteCandidate)
         var clean = ReviewDecision(); ReviewEngine.stageAlbum(plan, decision: &clean)
-        XCTAssertEqual(clean.status, .organized)
+        XCTAssertEqual(clean.status, .unreviewed)
     }
     func testSuggestedDestinationAdoptsMembersIntoStableManualGroup() {
         let photos = [photo("a"), photo("b", seconds: 60), photo("c", seconds: 20_000)]

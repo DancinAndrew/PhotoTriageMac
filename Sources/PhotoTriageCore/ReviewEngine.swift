@@ -7,12 +7,25 @@ public enum ReviewEngine {
     public static func apply(to document: inout ReviewDocument, ids: Set<String>, label: String,
                              manualGroup: (id: String, title: String)? = nil,
                              transform: (inout ReviewDecision) -> Void) -> Bool {
+        applyPerAsset(to: &document, ids: ids, label: label, manualGroup: manualGroup) { _, decision in transform(&decision) }
+    }
+
+    @discardableResult
+    public static func applyStatuses(to document: inout ReviewDocument, statuses: [String: ReviewStatus], label: String) -> Bool {
+        applyPerAsset(to: &document, ids: Set(statuses.keys), label: label, manualGroup: nil) { id, decision in
+            if let status = statuses[id] { decision.status = status }
+        }
+    }
+
+    private static func applyPerAsset(to document: inout ReviewDocument, ids: Set<String>, label: String,
+                                     manualGroup: (id: String, title: String)?,
+                                     transform: (String, inout ReviewDecision) -> Void) -> Bool {
         guard !ids.isEmpty else { return false }
         var changes: [ReviewChange] = []
         for id in ids.sorted() {
             let before = document.decisions[id]
             var after = before ?? ReviewDecision()
-            transform(&after)
+            transform(id, &after)
             let stored: ReviewDecision? = after.isEmpty ? nil : after
             if before != stored { changes.append(ReviewChange(assetID: id, before: before, after: stored)) }
         }
@@ -36,7 +49,6 @@ public enum ReviewEngine {
     public static func stageAlbum(_ plan: AlbumPlan, decision: inout ReviewDecision) {
         // Queue takes precedence; planning an album must never erase a pending deletion decision.
         if !decision.albumPlans.contains(where: { $0.id == plan.id }) { decision.albumPlans.append(plan) }
-        if decision.status != .deleteCandidate { decision.status = .organized }
     }
 
     /// Adopt every member of a suggested destination into one stable manual group.

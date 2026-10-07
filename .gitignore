@@ -22,3 +22,7 @@ demo-review.json
 travel-album-receipts.json
 travel-analysis.json
 album-inventory.json
+
+*-workspace.json
+workspace-launch.json
+*-destinations.json

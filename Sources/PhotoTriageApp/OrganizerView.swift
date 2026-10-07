@@ -25,6 +25,9 @@ struct OrganizerView: View {
                 if let error = model.destinationError {
                     Text(error).font(.caption).foregroundStyle(.orange).padding(.horizontal, 20)
                 }
+                if let error = model.workspaceError {
+                    Text(error).font(.caption).foregroundStyle(.orange).padding(.horizontal, 20)
+                }
                 if model.isLoading {
                     Spacer(); ProgressView("讀取可見照片與相簿…"); Spacer()
                 } else if !model.isDemo && !model.access.canRead {
@@ -40,12 +43,15 @@ struct OrganizerView: View {
                 }.font(.system(size: 10)).padding(.horizontal, 20).padding(.vertical, 10)
             }.frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.paper)
         }.tint(Theme.accent).foregroundStyle(Theme.ink)
+            .background(VerificationWindowPlacement())
             .sheet(item: $model.albumAction) { LocalAlbumSheet(action: $0).environmentObject(model) }
             .sheet(isPresented: $model.showAlbumSheet) { AlbumPlanSheet().environmentObject(model) }
             .sheet(isPresented: $model.showGroupSheet) { GroupSheet().environmentObject(model) }
             .sheet(isPresented: $model.showPlanSheet) { ReviewPlanSheet().environmentObject(model) }
             .sheet(isPresented: $model.showMusicSheet) { MusicReviewSheet().environmentObject(model) }
+            .sheet(item: $model.comparison) { ComparisonSheet(batch: $0).environmentObject(model) }
             .task {
+                if AppUIVerification.requested { AppUIVerification.schedule(model); return }
                 if CommandLine.arguments.contains("--connect-photos") { model.connect() }
                 DemoUICapture.schedule(model)
             }
@@ -59,6 +65,9 @@ struct OrganizerView: View {
             }
             .onChange(of: model.rangeStart) { _, _ in model.filterChanged() }
             .onChange(of: model.rangeEnd) { _, _ in model.filterChanged() }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.flushWorkspace() }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in model.flushWorkspace() }
+            .onDisappear { model.flushWorkspace() }
     }
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -82,7 +91,7 @@ struct OrganizerView: View {
                 Spacer()
                 Button { model.albumAction = .create } label: { Image(systemName: "plus") }
                     .buttonStyle(.plain).help("新增本機相簿").disabled(!model.canManageAlbums)
-                    .accessibilityLabel("新增相簿").accessibilityIdentifier("newLocalAlbum")
+                    .accessibilityLabel("新增相簿").accessibilityIdentifier("newLocalAlbum").qaControl("newLocalAlbum")
             }.padding(.horizontal, 18).padding(.bottom, 8)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 3) {
@@ -93,10 +102,10 @@ struct OrganizerView: View {
                         Text("按 + 建立第一個相簿").font(.caption).foregroundStyle(.secondary).padding(12)
                     }
                 }.padding(.horizontal, 9)
-            }.accessibilityIdentifier("unifiedAlbumList")
+            }.accessibilityIdentifier("unifiedAlbumList").qaControl("unifiedAlbumList")
             Divider()
             Button(model.isDemo ? "連線 Apple 照片…" : "重新讀取照片") { model.connect() }
-                .buttonStyle(.bordered).disabled(model.isLoading).accessibilityIdentifier("connectPhotos").padding(14)
+                .buttonStyle(.bordered).disabled(model.isLoading).accessibilityIdentifier("connectPhotos").qaControl("connectPhotos").padding(14)
         }.frame(maxHeight: .infinity).background(.white)
     }
     private func scopeButton(_ scope: ReviewScope) -> some View {
@@ -108,7 +117,8 @@ struct OrganizerView: View {
                 Text("\(model.count(scope))").font(.caption).monospacedDigit().foregroundStyle(.secondary)
             }.font(.system(size: 12, weight: active ? .semibold : .regular)).padding(.horizontal, 13).padding(.vertical, 9)
                 .background(active ? Theme.accent.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: 7))
-        }.buttonStyle(.plain).accessibilityIdentifier("scope-\(scope.rawValue)").padding(.horizontal, 7)
+                .contentShape(Rectangle())
+        }.buttonStyle(.plain).accessibilityIdentifier("scope-\(scope.rawValue)").qaControl("scope-\(scope.rawValue)").padding(.horizontal, 7)
     }
     private func albumButton(_ album: OrganizerAlbum) -> some View {
         Button { model.setOrganizerAlbum(album.id) } label: {
@@ -120,7 +130,8 @@ struct OrganizerView: View {
             }.font(.system(size: 11)).padding(9).frame(maxWidth: .infinity, alignment: .leading)
                 .background(model.selectedOrganizerAlbumID == album.id ? Theme.accent.opacity(0.1) : .clear,
                             in: RoundedRectangle(cornerRadius: 7))
-        }.buttonStyle(.plain).accessibilityIdentifier("organizer-album-\(album.id)")
+                .contentShape(Rectangle())
+        }.buttonStyle(.plain).accessibilityIdentifier("organizer-album-\(album.id)").qaControl("organizer-album-\(album.id)")
             .contextMenu {
                 Button("重新命名…") { model.albumAction = .rename(album.id) }
                 Button("移除本機相簿…") { model.albumAction = .delete(album.id) }
@@ -133,28 +144,32 @@ struct OrganizerView: View {
     private var header: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 5) {
-                Text(title).font(.system(size: 25, weight: .semibold))
+                Text(title).font(.system(size: 25, weight: .semibold)).lineLimit(1)
                 Text("\(model.visible.count) 張照片" + (model.currentOrganizerAlbum.map { " · " + $0.sourceLabel } ?? ""))
                     .font(.caption).foregroundStyle(.secondary)
+                Text("人工審閱 \(model.progressCount) / \(model.records.count) · 本機待刪候選 \(model.queueCount)")
+                    .font(.system(size: 10)).foregroundStyle(.secondary).accessibilityIdentifier("organizerProgress").qaControl("organizerProgress")
             }
             Spacer()
+            Button("並排挑選 C") { model.beginComparison() }.disabled(!model.canCompare)
+                .help("選 2–6 張照片，指定保留及其餘待刪候選").accessibilityIdentifier("compareSelection").qaControl("compareSelection")
             if let album = model.currentOrganizerAlbum {
                 Menu("相簿…") {
                     Button("重新命名…") { model.albumAction = .rename(album.id) }
                     Button("移除本機相簿…") { model.albumAction = .delete(album.id) }
-                }.accessibilityIdentifier("currentAlbumMenu")
+                }.accessibilityIdentifier("currentAlbumMenu").qaControl("currentAlbumMenu")
             }
             Button("全選目前篩選（\(model.visible.count)）") { model.selectAll() }
-                .buttonStyle(.bordered).disabled(!model.canSelectVisible).accessibilityIdentifier("selectAllVisible")
+                .buttonStyle(.bordered).disabled(!model.canSelectVisible).accessibilityIdentifier("selectAllVisible").qaControl("selectAllVisible")
             Button { model.inspectorVisible.toggle() } label: { Image(systemName: "info.circle") }
                 .buttonStyle(.bordered).disabled(model.focusedID == nil).help("顯示／收合照片資訊")
-                .accessibilityIdentifier("toggleInspector")
+                .accessibilityIdentifier("toggleInspector").qaControl("toggleInspector")
             Menu {
                 Button("復原相簿操作") { model.undoLocalAlbum() }.disabled(model.localAlbums.history.isEmpty || !model.canManageAlbums)
                 Button("既有審閱紀錄…") { model.showPlanSheet = true }
                 if !model.isDemo { Button("音樂 OCR…") { model.showMusicSheet = true }.disabled(!model.access.canRead) }
                 if !model.isDemo { Button("使用範例資料") { model.loadDemo() } }
-            } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).frame(width: 24).accessibilityIdentifier("organizerTools")
+            } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).frame(width: 24).accessibilityIdentifier("organizerTools").qaControl("organizerTools")
         }.padding(.horizontal, 22).padding(.vertical, 18)
     }
     private var accessPanel: some View {
@@ -167,35 +182,36 @@ struct OrganizerView: View {
             HStack {
                 Button("重新檢查權限") { model.connect() }
                 Button("使用範例") { model.loadDemo() }.buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("deniedUseDemo").qaControl("deniedUseDemo")
             }
             Spacer()
-        }.frame(maxWidth: .infinity)
+        }.frame(maxWidth: .infinity).accessibilityIdentifier("photosAccessPanel").qaControl("photosAccessPanel")
     }
     private var actionBar: some View {
         VStack(spacing: 7) {
             Divider()
             HStack(spacing: 9) {
                 Text("已選 \(model.selected.count) / \(model.visible.count)").font(.caption).monospacedDigit()
-                    .frame(minWidth: 98, alignment: .leading).accessibilityIdentifier("selectionCount")
+                    .frame(minWidth: 98, alignment: .leading).accessibilityIdentifier("selectionCount").qaControl("selectionCount")
                 Button("加入相簿… A") { model.albumAction = .addSelection }
                     .buttonStyle(.borderedProminent).disabled(!model.canAct || !model.canManageAlbums)
-                    .accessibilityIdentifier("addToLocalAlbum")
+                    .accessibilityIdentifier("addToLocalAlbum").qaControl("addToLocalAlbum")
                 if let destination = model.repeatDestinationAlbum {
                     Button { model.repeatDestination() } label: {
                         Text("沿用：\(destination.title)").lineLimit(1).frame(maxWidth: 145)
                     }.disabled(!model.canAct || !model.canManageAlbums)
                         .help("直接加入「\(destination.title)」，審閱狀態不變 · ⇧A")
-                        .accessibilityIdentifier("repeatAlbumDestination")
+                        .accessibilityIdentifier("repeatAlbumDestination").qaControl("repeatAlbumDestination")
                 }
                 Button("加入並完成這批") { model.repeatDestination(completeReview: true) }
                     .disabled(!model.canAct || !model.canManageAlbums)
                     .help(model.repeatDestinationAlbum.map { "加入「\($0.title)」並完成這批 · ⌘⇧A" } ?? "選擇相簿並完成這批")
-                    .accessibilityIdentifier("addAndCompleteBatch")
+                    .accessibilityIdentifier("addAndCompleteBatch").qaControl("addAndCompleteBatch")
                 if let album = model.currentOrganizerAlbum {
                     Button("移出相簿") {
                         do { try model.changeLocalAlbumMembers(id: album.id, adding: false) }
                         catch { model.notice = error.localizedDescription }
-                    }.disabled(model.selected.isEmpty || !model.canManageAlbums).accessibilityIdentifier("removeFromLocalAlbum")
+                    }.disabled(model.selected.isEmpty || !model.canManageAlbums).accessibilityIdentifier("removeFromLocalAlbum").qaControl("removeFromLocalAlbum")
                 }
                 Menu("更多…") {
                     Button("保留 K") { model.mark(.kept) }
@@ -212,14 +228,14 @@ struct OrganizerView: View {
                     }
                     Button("暫時用途 T") { model.toggleTemporary() }
                     Button("加入待刪候選 D") { model.addToDeleteQueue() }
-                        .accessibilityIdentifier("addToDeleteQueue")
+                        .accessibilityIdentifier("addToDeleteQueue").qaControl("addToDeleteQueue")
                 }.disabled(!model.canAct)
                 Spacer()
                 Button { model.undo() } label: { Image(systemName: "arrow.uturn.backward") }
-                    .disabled(!model.canUndo || !model.canReview || model.hasModal).help("復原 ⌘Z").accessibilityIdentifier("undoOrganizer")
-                Button("清除選取") { model.clearSelection() }.buttonStyle(.plain).accessibilityIdentifier("clearSelection")
+                    .disabled(!model.canUndo || !model.canReview || model.hasModal).help("復原 ⌘Z").accessibilityIdentifier("undoOrganizer").qaControl("undoOrganizer")
+                Button("清除選取") { model.clearSelection() }.buttonStyle(.plain).accessibilityIdentifier("clearSelection").qaControl("clearSelection")
             }.buttonStyle(.bordered).controlSize(.small).padding(.horizontal, 22)
-            Text("⌘A 全選篩選 · ⇧A 沿用相簿 · ⌘⇧A 加入並完成 · ⌘Z 整批復原 · 相簿操作不刪照片")
+            Text("⌘A 全選篩選 · C 並排挑選（2–6 張） · ⇧A 沿用相簿 · ⌘⇧A 加入並完成 · ⌘Z 整批復原")
                 .font(.system(size: 9)).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 22).padding(.bottom, 8)
         }.background(.white)
     }

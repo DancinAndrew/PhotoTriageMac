@@ -10,23 +10,23 @@ struct OrganizerFilterBar: View {
                     Text("全部類型").tag(MediaKind?.none)
                     Text("照片").tag(MediaKind?.some(.image))
                     Text("影片").tag(MediaKind?.some(.video))
-                }.frame(width: 145).accessibilityIdentifier("filterMedia")
+                }.frame(width: 145).accessibilityIdentifier("filterMedia").qaControl("filterMedia")
                 Picker("審閱", selection: $model.filter.reviewStatus) {
                     Text("全部狀態").tag(ReviewStatus?.none)
                     ForEach(ReviewStatus.allCases, id: \.self) { status in
                         Text(status.label).tag(ReviewStatus?.some(status))
                     }
-                }.frame(width: 200).accessibilityIdentifier("filterReviewStatus")
-                Toggle("截圖", isOn: $model.filter.screenshotsOnly).accessibilityIdentifier("filterScreenshots")
+                }.frame(width: 200).accessibilityIdentifier("filterReviewStatus").qaControl("filterReviewStatus")
+                Toggle("截圖", isOn: $model.filter.screenshotsOnly).accessibilityIdentifier("filterScreenshots").qaControl("filterScreenshots")
                 Spacer()
-                Button("清除全部條件") { model.resetFilter() }.accessibilityIdentifier("clearAllFilters")
+                Button("清除全部條件") { model.resetFilter() }.accessibilityIdentifier("clearAllFilters").qaControl("clearAllFilters")
             }
             HStack(spacing: 13) {
                 Toggle("尚無分類歸屬", isOn: $model.filter.unclassifiedOnly)
                 Toggle("暫時用途", isOn: $model.filter.temporaryOnly)
                 Toggle("密集拍攝", isOn: $model.filter.rapidShotsOnly)
                 Toggle("日期範圍", isOn: Binding(get: { model.useDateRange }, set: { model.setDateRangeEnabled($0) }))
-                    .accessibilityIdentifier("filterDateRange")
+                    .accessibilityIdentifier("filterDateRange").qaControl("filterDateRange")
                 Toggle("時間未知", isOn: Binding(get: { model.filter.unknownDateOnly }, set: { model.setUnknownDateOnly($0) }))
             }
             if model.useDateRange {
@@ -48,10 +48,10 @@ struct OrganizerFilterBar: View {
                                     .padding(.horizontal, 8).padding(.vertical, 5)
                                     .background(Theme.accent.opacity(0.09), in: Capsule())
                             }.buttonStyle(.plain).accessibilityLabel("移除條件：\(chip.title)")
-                                .accessibilityIdentifier("filterChip-\(chip.kind.rawValue)")
+                                .accessibilityIdentifier("filterChip-\(chip.kind.rawValue)").qaControl("filterChip-\(chip.kind.rawValue)")
                         }
                     }
-                }.scrollIndicators(.hidden).accessibilityIdentifier("activeFilterChips")
+                }.scrollIndicators(.hidden).accessibilityIdentifier("activeFilterChips").qaControl("activeFilterChips")
             }
             if model.filter.rapidShotsOnly {
                 Text("密集拍攝只依時間、位置或連拍資訊提示，尚未比對畫面，不能判定重複。")

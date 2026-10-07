@@ -9,9 +9,9 @@ final class AppModel: ObservableObject {
     @Published var albums: [Album] = []
     @Published var document = ReviewDocument()
     @Published var groups: [EventGroup] = []
-    @Published var filter = PhotoFilter()
-    @Published var selected: Set<String> = []
-    @Published var focusedID: String?
+    @Published var filter = PhotoFilter() { didSet { workspaceChanged() } }
+    @Published var selected: Set<String> = [] { didSet { workspaceChanged() } }
+    @Published var focusedID: String? { didSet { workspaceChanged() } }
     @Published var isDemo = true
     @Published var access = LibraryAccess.current()
     @Published var isLoading = false
@@ -31,8 +31,8 @@ final class AppModel: ObservableObject {
     @Published var localAlbumError: String?
     @Published var destinationPreferences = DestinationPreferences()
     @Published var destinationError: String?
-    @Published var selectedOrganizerAlbumID: String?
-    @Published var inspectorVisible = false
+    @Published var selectedOrganizerAlbumID: String? { didSet { workspaceChanged() } }
+    @Published var inspectorVisible = false { didSet { workspaceChanged() } }
     @Published var scrollTargetID: String?
     var albumSources: [OrganizerAlbum] = []
     var locallyClassifiedIDs: Set<String> = []
@@ -40,10 +40,23 @@ final class AppModel: ObservableObject {
     @Published var travelReport: TravelLibraryReport?
     @Published var travelProgress: String?
     @Published var travelError: String?
-    @Published var travelTripID: String?
-    @Published var useDateRange = false
-    @Published var rangeStart = Calendar.current.date(byAdding: .month, value: -1, to: Date())!
-    @Published var rangeEnd = Date()
+    @Published var travelTripID: String? { didSet { workspaceChanged() } }
+    @Published var useDateRange = false { didSet { workspaceChanged() } }
+    @Published var rangeStart = Calendar.current.date(byAdding: .month, value: -1, to: Date())! { didSet { workspaceChanged() } }
+    @Published var rangeEnd = Date() { didSet { workspaceChanged() } }
+    @Published var workspaceError: String?
+    @Published var comparison: ComparisonBatch?
+    @Published var pendingViewportRestore: WorkspaceState?
+    @Published var viewportAnchorToMount: String?
+    var viewportAnchorMountCompleted = false
+    var workspaceReady = false
+    var workspaceSaveTask: Task<Void, Never>?
+    var lastWorkspaceState: WorkspaceState?
+    var launchState: WorkspaceLaunchState?
+    var launchStateError: String?
+    var currentScrollY: Double = 0
+    var galleryFrames: [String: CGRect] = [:]
+    var viewportRestoreHandler: (() -> Void)?
     private(set) var assets: [String: PHAsset] = [:]
     private var rapidIDs: Set<String> = []
     private var groupIDs: [String: String] = [:]
@@ -66,7 +79,7 @@ final class AppModel: ObservableObject {
     var canReview: Bool { !isLoading && persistenceError == nil }
     var canAct: Bool { canReview && !actionableAlbumIDs.isEmpty && !hasModal }
     var canSelectVisible: Bool { !isLoading && !hasModal && !visible.isEmpty }
-    var hasModal: Bool { albumAction != nil || showAlbumSheet || showGroupSheet || showPlanSheet || showMusicSheet || showTravelSheet }
+    var hasModal: Bool { comparison != nil || albumAction != nil || showAlbumSheet || showGroupSheet || showPlanSheet || showMusicSheet || showTravelSheet }
     var selectedRecords: [PhotoRecord] { records.filter { selected.contains($0.id) } }
     var visible: [PhotoRecord] {
         if previousFilter != effectiveFilter {
@@ -105,23 +118,32 @@ final class AppModel: ObservableObject {
 
     init(reviewRoot: URL? = nil, startupOverride: String? = nil) {
         reviewRootOverride = reviewRoot
-        loadDemo()
+        do { launchState = try WorkspacePersistence.loadLaunch(from: launchStateURL) }
+        catch { launchStateError = error.localizedDescription }
+        loadDemo(recordLaunchProfile: false)
         let args = CommandLine.arguments
         if args.contains("--simulate-denied") || startupOverride == "denied" {
+            beginWorkspaceTransition()
             isDemo = false; records = []; albums = []; assets = [:]; access = .denied
-            loadDocument(); rebuild(); notice = "測試情境：照片權限遭拒絕。可切回範例操作。"
+            loadDocument(); rebuild(); restoreWorkspace(validateVisibility: false)
+            notice = "測試情境：照片權限遭拒絕。可切回範例操作。"
         } else if args.contains("--empty-demo") || startupOverride == "empty" {
             records = []; rebuild(); notice = "測試情境：空照片庫。"
+        } else if startupOverride == nil, reviewRoot == nil, launchState?.profile == .photos {
+            connect(requestPermission: false)
         }
     }
 
-    func loadDemo() {
+    func loadDemo(recordLaunchProfile: Bool = true) {
         guard !isLoading else { return }
+        beginWorkspaceTransition()
         isDemo = true
         travelReport = nil; travelReceipts = []
         records = DemoLibrary.records; albums = DemoLibrary.albums; assets = [:]
         loadDocument(); resetFilter(); rebuild()
         notice = "範例資料 · 插圖與資料皆為虛構，審閱檔與真實照片分開。"
+        restoreWorkspace()
+        if recordLaunchProfile { rememberLaunchProfile() }
     }
     private func loadDocument() {
         do {
@@ -135,11 +157,12 @@ final class AppModel: ObservableObject {
         loadLocalAlbums()
         loadDestinationPreferences()
     }
-    func connect() {
+    func connect(requestPermission: Bool = true) {
         guard !isLoading else { return }
+        beginWorkspaceTransition()
         Task {
             isLoading = true
-            if LibraryAccess.current() == .notRequested {
+            if requestPermission, LibraryAccess.current() == .notRequested {
                 _ = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
             }
             access = .current()
@@ -148,6 +171,8 @@ final class AppModel: ObservableObject {
             loadDocument(); resetFilter(); rebuild()
             guard access.canRead else {
                 isLoading = false
+                restoreWorkspace(validateVisibility: false)
+                if requestPermission { rememberLaunchProfile() }
                 notice = "未能讀取照片。請在系統設定 → 隱私權與安全性 → 照片，檢查本程式權限。"
                 return
             }
@@ -161,6 +186,7 @@ final class AppModel: ObservableObject {
             access = .current()
             if access.canRead {
                 loadPhotosSnapshot(snapshot)
+                rememberLaunchProfile()
                 notice = "已讀取 \(records.count) 張照片。分類儲存在本機，尚未同步 Apple 照片。"
             } else {
                 notice = "照片權限已變更，請重新連線。"
@@ -170,9 +196,11 @@ final class AppModel: ObservableObject {
     }
     /// Import a metadata snapshot without changing any saved review decisions or Photos assets.
     func loadPhotosSnapshot(_ snapshot: LibrarySnapshot) {
+        beginWorkspaceTransition()
         isDemo = false
         records = snapshot.records; albums = snapshot.albums; assets = snapshot.assets
         loadDocument(); loadTravelReport(); resetFilter(); rebuild()
+        restoreWorkspace()
     }
     func resetFilter() {
         filter = PhotoFilter(); useDateRange = false; selected = []; focusedID = nil; travelTripID = nil
@@ -238,6 +266,7 @@ final class AppModel: ObservableObject {
         let ids = Set(visible.map(\.id))
         selected.formIntersection(ids)
         if let focusedID, !ids.contains(focusedID) { self.focusedID = nil }
+        workspaceChanged()
     }
     func rebuild() {
         groups = EventGrouping.suggest(records, document: document)
@@ -294,13 +323,16 @@ final class AppModel: ObservableObject {
         scrollTargetID = ids[next]
     }
 
-    private func commit(_ next: ReviewDocument, success: String) {
+    @discardableResult
+    func commit(_ next: ReviewDocument, success: String) -> Bool {
         do {
             guard try ReviewPersistence.load(from: reviewURL) == document else { throw OrganizerPersistence.Failure.changedData }
             try ReviewPersistence.save(next, to: reviewURL)
             document = next; notice = success
             rebuild()
-        } catch { persistenceError = "儲存失敗，這次操作未套用：\(error.localizedDescription)" }
+            workspaceChanged()
+            return true
+        } catch { persistenceError = "儲存失敗，這次操作未套用：\(error.localizedDescription)"; return false }
     }
     func apply(_ label: String, ids: Set<String>? = nil,
                manualGroup: (id: String, title: String)? = nil,
@@ -314,7 +346,7 @@ final class AppModel: ObservableObject {
         guard ReviewEngine.apply(to: &next, ids: target, label: label, manualGroup: manualGroup, transform: transform) else {
             notice = "標記已相同，沒有重複寫入。"; return
         }
-        commit(next, success: "\(label) · \(target.count) 個項目 · ⌘Z 可復原")
+        guard commit(next, success: "\(label) · \(target.count) 個項目 · ⌘Z 可復原") else { return }
         if selected.isEmpty, !visible.isEmpty { select(visible[min(oldIndex, visible.count - 1)].id) }
     }
     func mark(_ status: ReviewStatus) { apply(status.label) { $0.status = status } }

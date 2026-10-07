@@ -79,6 +79,8 @@ public struct ReviewDecision: Codable, Equatable, Sendable {
     public var albumPlans: [AlbumPlan] = []
     public init() {}
     public var isEmpty: Bool { self == ReviewDecision() }
+    public var hasBeenReviewed: Bool { status != .unreviewed }
+    public var isDeletionCandidate: Bool { status == .deleteCandidate }
 }
 
 public struct ReviewChange: Codable, Equatable, Sendable {
@@ -112,7 +114,7 @@ public struct EventGroup: Identifiable, Equatable, Sendable {
     public var start: Date?
 }
 
-public enum ReviewScope: String, CaseIterable, Identifiable, Sendable {
+public enum ReviewScope: String, Codable, CaseIterable, Identifiable, Sendable {
     case all, unreviewed, unclassified, kept, organized, temporary, deleteQueue, screenshots, rapidShots
     public var id: String { rawValue }
     public var label: String {
@@ -143,7 +145,7 @@ public enum ReviewScope: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-public struct PhotoFilter: Equatable, Sendable {
+public struct PhotoFilter: Codable, Equatable, Sendable {
     public var scope: ReviewScope = .all
     public var reviewStatus: ReviewStatus?
     public var screenshotsOnly = false

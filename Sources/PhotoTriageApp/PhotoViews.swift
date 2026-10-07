@@ -96,7 +96,7 @@ struct PhotoCard: View {
     var body: some View {
         let chosen = model.selected.contains(record.id)
         let decision = model.document.decision(for: record.id)
-        Button { model.select(record.id, modifiers: NSEvent.modifierFlags) } label: {
+        Button { model.select(record.id, modifiers: NSApp.currentEvent?.modifierFlags ?? NSEvent.modifierFlags) } label: {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack(alignment: .topTrailing) {
                     ThumbnailView(record: record, asset: model.assets[record.id]).frame(height: 136).clipped()
@@ -130,7 +130,7 @@ struct PhotoCard: View {
                                        value: [record.id: geometry.frame(in: .named("galleryViewport"))])
             })
             .accessibilityLabel("\(record.isScreenshot ? "截圖" : record.kind == .video ? "影片" : "照片")，\(record.date?.formatted() ?? "時間未知")，\(decision.status.label)，\(model.classificationLabel(for: record.id))")
-            .accessibilityValue(chosen ? "已選取" : "未選取").accessibilityIdentifier("photo-\(record.id)")
+            .accessibilityValue(chosen ? "已選取" : "未選取").accessibilityIdentifier("photo-\(record.id)").qaControl("photo-\(record.id)")
     }
 }
 
@@ -146,7 +146,7 @@ struct PhotoInspector: View {
                     Spacer()
                     Button { model.closeInspector() } label: { Image(systemName: "xmark") }
                         .buttonStyle(.plain).help("收合照片資訊，不清除選取")
-                        .accessibilityLabel("收合照片資訊").accessibilityIdentifier("closeInspector")
+                        .accessibilityLabel("收合照片資訊").accessibilityIdentifier("closeInspector").qaControl("closeInspector")
                 }
                 ThumbnailView(record: record, asset: model.assets[record.id]).frame(height: 145)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -156,7 +156,9 @@ struct PhotoInspector: View {
                 if record.isScreenshot { Label("螢幕截圖", systemImage: "camera.viewfinder").font(.caption) }
                 if record.isFavorite { Label("照片庫中的喜好項目", systemImage: "heart.fill").font(.caption) }
                 Divider()
-                info("審閱狀態", decision.status.label + (decision.isTemporary ? " · 暫時用途" : ""))
+                info("人工審閱", decision.hasBeenReviewed ? "已人工審閱" : "未審閱")
+                info("審閱決定", decision.status.label + (decision.isTemporary ? " · 暫時用途" : ""))
+                info("待刪候選", decision.isDeletionCandidate ? "是 · 只有本機標記，照片未刪除" : "否")
                 info("分類歸屬", model.classificationLabel(for: record.id))
                 info("事件", model.group(for: record)?.title ?? "未分組")
                 let names = model.albums.filter { record.albumIDs.contains($0.id) }.map(\.title)
