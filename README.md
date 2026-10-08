@@ -2,7 +2,7 @@
 
 A local macOS organizer for fast human review of an Apple Photos library. The native interface uses SwiftUI, AppKit and public PhotoKit APIs. The interface is in Traditional Chinese. It starts with 43 fictional illustrated items, so the workflow can be tried without Photos permission.
 
-Current version: **0.5.0, build 10**. The bundle filename stays `Photo Triage Organizer 0.4.0.app` to preserve the existing local launch entry.
+Current version: **0.5.1, build 11**. The bundle filename stays `Photo Triage Organizer 0.4.0.app` to preserve the existing local launch entry.
 
 ## Current features
 
@@ -14,6 +14,7 @@ Current version: **0.5.0, build 10**. The bundle filename stays `Photo Triage Or
 - Recent target albums, quick repeat classification, and an explicit “加入並完成這批” action. Only selected unreviewed items become completed; existing keep/delete decisions are preserved.
 - Resume the last album, combined filters, selection, inspector and gallery position. Demo and real-library workspaces remain separate; progress comes from saved review decisions.
 - Compare 2–6 selected photos side by side, zoom the local preview, explicitly choose keepers, and stage the others as deletion candidates. A comparison is one persisted, undoable review action; it never deletes assets.
+- Native text undo/redo in album name fields, with photo-review history kept separate.
 - Persisted undo. A combined album-and-review action is undone together, including after a restart. Interrupted saves recover through the organizer's own transaction journal.
 - Optional local travel analysis and on-device music screenshot OCR. These produce suggestions and local reports for human review.
 
@@ -31,7 +32,7 @@ bash scripts/build-organizer-app.sh release
 bash scripts/run-organizer.sh
 ```
 
-The build creates `dist/Photo Triage Organizer 0.4.0.app` with a local ad-hoc signature. It is not notarized or distributed through the App Store. The build archives a previous local bundle before replacing it. The run script prevents a second organizer process from sharing the review files.
+The build creates `dist/Photo Triage Organizer 0.4.0.app` with a local ad-hoc signature. It is not notarized or distributed through the App Store. The build archives a previous local bundle before replacing it. A new ad-hoc signature may reset Photos authorization; approve any new native Photos prompt yourself. The run script prevents a second organizer process from sharing the review files.
 
 For an isolated demo profile:
 
@@ -64,7 +65,8 @@ These local files and optional analysis/export reports can contain Photos identi
 | A | Choose a target local album |
 | ⇧A | Reuse the most recent valid target album |
 | ⌘⇧A | Add to the recent target and complete selected unreviewed items |
-| ⌘Z | Undo the last local organizer action |
+| ⌘Z | Undo text when editing; otherwise undo the last local organizer action |
+| ⌘⇧Z | Redo text while editing |
 | ← / → / I | Previous / next / toggle photo details |
 
 When no recent valid album exists, the complete-batch action opens the chooser. “只加入相簿” preserves review status; “加入並完成這批” is explicit. Editing text or using a modal prevents photo-review shortcuts from acting on the grid.
@@ -73,7 +75,7 @@ When no recent valid album exists, the complete-batch action opens the chooser. 
 
 `bash scripts/verify.sh` runs read-only Photos API checks, publication-content checks and the Swift test suite. Tests use fictional data and temporary profiles. Coverage includes combined filters, recent targets, repeated actions, mixed review states, paired undo after restart, interrupted saves, stale writes, empty data, denied access, missing metadata and native view rendering offscreen. CI also builds and verifies the macOS app signature.
 
-The full suite includes 115 tests. The physical Mac release also passed isolated actual-app UI checks for batch selection, comparison, numeric keeper/Escape bindings, zoom, native menu commands, album actions, denied/empty states, and restart positions at 310 and 1300 points. These checks use the app's own offscreen window/event queue and fictional profiles; foreground physical keyboard/clipboard interaction and real-library/iCloud access were not exercised. The hosted Intel CI VM skips one GPU-dependent grid scroll/resize geometry test because its Metal driver has no usable target architecture. The other native offscreen view tests still run. Run the full suite on a physical Mac to verify that geometry test; it passes on the locally tested Apple Silicon Mac.
+The full suite includes 117 tests. The physical Mac release also passed isolated actual-app UI checks for batch selection, comparison, numeric keeper/Escape bindings, zoom, native menu commands, album actions, denied/empty states, and restart positions at 310 and 1300 points. The original release checks use the app's own offscreen window/event queue and fictional profiles. Version 0.5.1 additionally passed 27 native foreground checks using macOS CGEvent input and accessibility observations, including copy/cut/paste, text undo/redo, comparison keepers, zoom, cancellation, atomic photo undo and repeated operations. Original clipboard types and bytes were restored. These foreground checks used fictional isolated profiles; they do not establish real-library authorization or preview availability on another Mac. The hosted Intel CI VM skips one GPU-dependent grid scroll/resize geometry test because its Metal driver has no usable target architecture. The other native offscreen view tests still run. Run the full suite on a physical Mac to verify that geometry test; it passes on the locally tested Apple Silicon Mac.
 
 Optional actual-app UI verification (after building; use a fresh fictional profile):
 
