@@ -79,7 +79,13 @@ public struct ReviewDecision: Codable, Equatable, Sendable {
     public var albumPlans: [AlbumPlan] = []
     public init() {}
     public var isEmpty: Bool { self == ReviewDecision() }
-    public var hasBeenReviewed: Bool { status != .unreviewed }
+    // Derived from saved decisions; historical O values remain intact, with no migration write.
+    public var hasBeenReviewed: Bool { status != .unreviewed || isTemporary }
+    public var displayLabel: String {
+        if status == .unreviewed && isTemporary { return "暫時用途" }
+        if status == .organized { return isTemporary ? "舊版已審閱 · 暫時用途" : "舊版已審閱" }
+        return status.label + (isTemporary ? " · 暫時用途" : "")
+    }
     public var isDeletionCandidate: Bool { status == .deleteCandidate }
 }
 
@@ -148,6 +154,7 @@ public enum ReviewScope: String, Codable, CaseIterable, Identifiable, Sendable {
 public struct PhotoFilter: Codable, Equatable, Sendable {
     public var scope: ReviewScope = .all
     public var reviewStatus: ReviewStatus?
+    public var reviewedOnly: Bool?
     public var screenshotsOnly = false
     public var unclassifiedOnly = false
     public var temporaryOnly = false
@@ -165,7 +172,7 @@ public struct PhotoFilter: Codable, Equatable, Sendable {
         let decision = document.decision(for: photo.id)
         switch scope {
         case .all: break
-        case .unreviewed: guard decision.status == .unreviewed else { return false }
+        case .unreviewed: guard !decision.hasBeenReviewed else { return false }
         case .unclassified: guard decision.groupOverride == nil, decision.albumPlans.isEmpty,
                                   photo.albumIDs.isEmpty else { return false }
         case .kept: guard decision.status == .kept else { return false }
@@ -175,7 +182,12 @@ public struct PhotoFilter: Codable, Equatable, Sendable {
         case .screenshots: guard photo.isScreenshot else { return false }
         case .rapidShots: guard rapidIDs.contains(photo.id) else { return false }
         }
-        if let reviewStatus, decision.status != reviewStatus { return false }
+        if let reviewedOnly, decision.hasBeenReviewed != reviewedOnly { return false }
+        if let reviewStatus {
+            if reviewStatus == .unreviewed {
+                guard !decision.hasBeenReviewed else { return false }
+            } else if decision.status != reviewStatus { return false }
+        }
         if screenshotsOnly, !photo.isScreenshot { return false }
         if temporaryOnly, !decision.isTemporary { return false }
         if rapidShotsOnly, !rapidIDs.contains(photo.id) { return false }

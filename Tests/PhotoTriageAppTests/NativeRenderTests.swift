@@ -55,7 +55,7 @@ final class NativeRenderTests: XCTestCase {
             let ids = Set(model.selected)
             model.repeatDestination(completeReview: true)
             XCTAssertTrue(model.visible.isEmpty)
-            XCTAssertTrue(ids.allSatisfy { model.document.decision(for: $0).status == .organized })
+            XCTAssertTrue(ids.allSatisfy { model.document.decision(for: $0).status == .kept })
             model.removeFilterChip(.review); model.select(ids.sorted()[0])
             try render(OrganizerView().environmentObject(model), width: 1320, height: 850,
                        output: output?.appendingPathComponent("completed-review-membership.png"))

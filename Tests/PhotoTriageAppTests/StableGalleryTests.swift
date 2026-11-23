@@ -50,7 +50,7 @@ final class StableGalleryTests: XCTestCase {
             model.select(ids[0]); settle(); compare(initial)
             model.select(ids[3]); settle(); compare(initial)
             model.closeInspector(); settle(); compare(initial)
-            model.inspectorVisible = true; model.select(ids[5], modifiers: .command); settle(); compare(initial)
+            model.select(ids[5], modifiers: .command); settle(); compare(initial)
             model.selectAll(); settle(); compare(initial)
             model.clearSelection(); settle(); compare(initial)
             @MainActor func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }

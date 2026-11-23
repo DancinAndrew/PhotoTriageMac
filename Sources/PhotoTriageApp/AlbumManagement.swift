@@ -160,9 +160,9 @@ extension AppModel {
         let oldVisible = visible.map(\.id)
         let oldIndex = focusedID.flatMap { oldVisible.firstIndex(of: $0) } ?? 0
         if completeReview {
-            _ = ReviewEngine.apply(to: &review, ids: ids, label: "加入相簿並完成這批") {
-                // Existing keep/delete judgments remain intact. Only this batch's unreviewed items change.
-                if $0.status == .unreviewed { $0.status = .organized }
+            _ = ReviewEngine.apply(to: &review, ids: ids, label: "加入相簿並保留未決策項目") {
+                // Existing K/T/D and historical O judgments remain intact; undecided items receive K.
+                if !$0.hasBeenReviewed { $0.status = .kept }
             }
         }
         let albumsChanged = next != localAlbums, reviewChanged = review != document
@@ -179,7 +179,7 @@ extension AppModel {
         }
         else { notice = "這批已有相同相簿歸屬與審閱狀態，沒有重複寫入。"; return }
         rebuild()
-        notice = success + (completeReview ? " · 已完成這批審閱，保留既有保留／待刪標記" : " · 審閱狀態未變更") + " · 本機保存，未同步 Apple 照片 · ⌘Z 可復原"
+        notice = success + (completeReview ? " · 已保留未決策項目，保留既有 K／T／D 與舊版紀錄" : " · 審閱狀態未變更") + " · 本機保存，未同步 Apple 照片 · ⌘Z 可復原"
         if selected.isEmpty, !visible.isEmpty { select(visible[min(oldIndex, visible.count - 1)].id) }
     }
     private func commitPairedDocuments(review: ReviewDocument, albums: LocalAlbumsDocument) throws {

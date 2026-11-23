@@ -120,7 +120,7 @@ final class LocalAlbumFlowTests: XCTestCase {
         let folder = root(); defer { try? FileManager.default.removeItem(at: folder) }
         await MainActor.run {
             let model = AppModel(reviewRoot: folder); let ids = model.visible.map(\.id)
-            model.select(ids[2]); XCTAssertTrue(model.inspectorVisible); XCTAssertNil(model.scrollTargetID)
+            model.inspectorVisible = true; model.select(ids[2]); XCTAssertTrue(model.inspectorVisible); XCTAssertNil(model.scrollTargetID)
             model.select(ids[3]); XCTAssertNil(model.scrollTargetID)
             model.closeInspector(); XCTAssertFalse(model.inspectorVisible); XCTAssertEqual(model.selected, [ids[3]])
             model.selectAll(); XCTAssertEqual(model.selected.count, 43); XCTAssertNil(model.scrollTargetID)

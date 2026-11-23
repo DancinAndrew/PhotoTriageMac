@@ -109,14 +109,14 @@ final class SpeedWorkflowTests: XCTestCase {
             model.select(ids[2]); model.addToDeleteQueue()
             let albumID = try model.createLocalAlbum(title: "Batch")
             let review = model.document, albums = model.localAlbums, records = model.records
-            model.selected = Set(ids.prefix(3)); model.focusedID = ids[0]
+            model.selected = Set(ids); model.focusedID = ids[0]
             try model.addSelectionToAlbum(id: albumID, completeReview: true)
-            XCTAssertEqual(model.document.decision(for: ids[0]).status, .organized)
+            XCTAssertEqual(model.document.decision(for: ids[0]).status, .unreviewed)
             XCTAssertTrue(model.document.decision(for: ids[0]).isTemporary)
             XCTAssertEqual(model.document.decision(for: ids[0]).groupOverride, review.decision(for: ids[0]).groupOverride)
             XCTAssertEqual(model.document.decision(for: ids[1]).status, .kept)
             XCTAssertEqual(model.document.decision(for: ids[2]).status, .deleteCandidate)
-            XCTAssertEqual(model.document.decision(for: ids[3]).status, .unreviewed)
+            XCTAssertEqual(model.document.decision(for: ids[3]).status, .kept)
             XCTAssertEqual(model.records, records)
             XCTAssertEqual(model.localAlbums.history.last?.pairedReviewID, model.document.history.last?.id)
             XCTAssertFalse(FileManager.default.fileExists(atPath: model.organizerJournalURL.path))
@@ -135,11 +135,11 @@ final class SpeedWorkflowTests: XCTestCase {
             model.select(id); let album = try model.createLocalAlbum(title: "Existing", includeSelection: true)
             let oldAlbums = model.localAlbums
             try model.addSelectionToAlbum(id: album, completeReview: true)
-            XCTAssertEqual(model.localAlbums, oldAlbums); XCTAssertEqual(model.document.decision(for: id).status, .organized)
+            XCTAssertEqual(model.localAlbums, oldAlbums); XCTAssertEqual(model.document.decision(for: id).status, .kept)
             model.undo(); XCTAssertEqual(model.document.decision(for: id).status, .unreviewed)
             model.select(id); let newID = try model.createLocalAlbum(title: "New complete", includeSelection: true, completeReview: true)
             XCTAssertTrue(model.organizerAlbums.contains { $0.id == newID })
-            XCTAssertEqual(model.document.decision(for: id).status, .organized)
+            XCTAssertEqual(model.document.decision(for: id).status, .kept)
             model.undo(); XCTAssertFalse(model.organizerAlbums.contains { $0.id == newID })
             XCTAssertEqual(model.document.decision(for: id).status, .unreviewed)
             XCTAssertTrue(model.organizerAlbums.contains { $0.id == album })
@@ -178,7 +178,10 @@ final class SpeedWorkflowTests: XCTestCase {
         let folder = root(); defer { try? FileManager.default.removeItem(at: folder) }
         await MainActor.run {
             let model = AppModel(reviewRoot: folder), id = model.records.first { $0.albumIDs.isEmpty }!.id
-            model.select(id); model.mark(.organized)
+            var legacy = model.document
+            ReviewEngine.apply(to: &legacy, ids: [id], label: "Historical O fixture") { $0.status = .organized }
+            _ = model.commit(legacy, success: "Fixture seed")
+            model.select(id)
             XCTAssertEqual(model.document.decision(for: id).status.rawValue, "organized")
             XCTAssertEqual(model.classificationLabel(for: id), "尚無分類歸屬")
             model.setScope(.organized); model.setScope(.unclassified)
@@ -236,7 +239,7 @@ final class SpeedWorkflowTests: XCTestCase {
             XCTAssertNotNil(model.persistenceError)
         }
     }
-    func testRestoreUnreviewedPreservesClassificationPlansAndTemporaryFlags() async throws {
+    func testClearReviewDecisionPreservesClassificationAndPlans() async throws {
         let folder = root(); defer { try? FileManager.default.removeItem(at: folder) }
         try await MainActor.run {
             let model = AppModel(reviewRoot: folder), id = model.visible[0].id
@@ -245,7 +248,7 @@ final class SpeedWorkflowTests: XCTestCase {
             _ = try model.createLocalAlbum(title: "Actual local album", includeSelection: true)
             let before = model.document, albumBytes = try Data(contentsOf: model.localAlbumURL)
             model.resetSelected()
-            var expected = before.decision(for: id); expected.status = .unreviewed
+            var expected = before.decision(for: id); expected.status = .unreviewed; expected.isTemporary = false
             XCTAssertEqual(model.document.decision(for: id), expected)
             XCTAssertEqual(try Data(contentsOf: model.localAlbumURL), albumBytes)
             XCTAssertTrue(model.locallyClassifiedIDs.contains(id))

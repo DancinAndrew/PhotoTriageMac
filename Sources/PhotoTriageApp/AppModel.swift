@@ -10,7 +10,10 @@ final class AppModel: ObservableObject {
     @Published var document = ReviewDocument()
     @Published var groups: [EventGroup] = []
     @Published var filter = PhotoFilter() { didSet { workspaceChanged() } }
-    @Published var selected: Set<String> = [] { didSet { workspaceChanged() } }
+    @Published var selected: Set<String> = [] {
+        willSet { if inspectorVisible && selected.isEmpty != newValue.isEmpty { prepareGalleryReflow() } }
+        didSet { workspaceChanged() }
+    }
     @Published var focusedID: String? { didSet { workspaceChanged() } }
     @Published var isDemo = true
     @Published var access = LibraryAccess.current()
@@ -32,7 +35,14 @@ final class AppModel: ObservableObject {
     @Published var destinationPreferences = DestinationPreferences()
     @Published var destinationError: String?
     @Published var selectedOrganizerAlbumID: String? { didSet { workspaceChanged() } }
-    @Published var inspectorVisible = false { didSet { workspaceChanged() } }
+    @Published var inspectorVisible = false {
+        willSet { if newValue != inspectorVisible { prepareGalleryReflow() } }
+        didSet { saveDisplayPreferences(); workspaceChanged() }
+    }
+    @Published var thumbnailSize: ThumbnailSize = .medium
+    @Published var displayPreferenceError: String?
+    var lastDisplayPreferences: DisplayPreferences?
+    var displayPreferencesReady = false
     @Published var scrollTargetID: String?
     var albumSources: [OrganizerAlbum] = []
     var locallyClassifiedIDs: Set<String> = []
@@ -46,9 +56,13 @@ final class AppModel: ObservableObject {
     @Published var rangeEnd = Date() { didSet { workspaceChanged() } }
     @Published var workspaceError: String?
     @Published var comparison: ComparisonBatch?
+    @Published var videoPreview: VideoPreviewSession?
+    // Only fixture verification supplies local files; normal library assets stay in PhotoKit.
+    var videoFixtureURLs: [String: URL] = [:]
     @Published var pendingViewportRestore: WorkspaceState?
     @Published var viewportAnchorToMount: String?
     var viewportAnchorMountCompleted = false
+    var viewportReflowBaseline: [String: CGRect]?
     var workspaceReady = false
     var workspaceSaveTask: Task<Void, Never>?
     var lastWorkspaceState: WorkspaceState?
@@ -79,7 +93,7 @@ final class AppModel: ObservableObject {
     var canReview: Bool { !isLoading && persistenceError == nil }
     var canAct: Bool { canReview && !actionableAlbumIDs.isEmpty && !hasModal }
     var canSelectVisible: Bool { !isLoading && !hasModal && !visible.isEmpty }
-    var hasModal: Bool { comparison != nil || albumAction != nil || showAlbumSheet || showGroupSheet || showPlanSheet || showMusicSheet || showTravelSheet }
+    var hasModal: Bool { videoPreview != nil || comparison != nil || albumAction != nil || showAlbumSheet || showGroupSheet || showPlanSheet || showMusicSheet || showTravelSheet }
     var selectedRecords: [PhotoRecord] { records.filter { selected.contains($0.id) } }
     var visible: [PhotoRecord] {
         if previousFilter != effectiveFilter {
@@ -113,15 +127,21 @@ final class AppModel: ObservableObject {
     }
     var queueCount: Int { document.decisions.values.filter { $0.status == .deleteCandidate }.count }
     var planCount: Int { document.decisions.values.reduce(0) { $0 + $1.albumPlans.count } }
-    var progressCount: Int { records.filter { document.decision(for: $0.id).status != .unreviewed }.count }
+    var progressCount: Int { records.filter { document.decision(for: $0.id).hasBeenReviewed }.count }
     var focusedRecord: PhotoRecord? { records.first { $0.id == focusedID } }
 
     init(reviewRoot: URL? = nil, startupOverride: String? = nil) {
         reviewRootOverride = reviewRoot
+        loadDisplayPreferences()
         do { launchState = try WorkspacePersistence.loadLaunch(from: launchStateURL) }
         catch { launchStateError = error.localizedDescription }
         loadDemo(recordLaunchProfile: false)
         let args = CommandLine.arguments
+        let argumentFixture = args.firstIndex(of: "--video-fixture").flatMap { args.indices.contains($0 + 1) ? args[$0 + 1] : nil }
+        // File-looking command-line values can suppress SwiftUI's initial window on macOS.
+        // The environment fallback exists only for the guarded isolated native video QA profile.
+        let fixturePath = argumentFixture ?? (args.contains("--ui-qa") && args.contains("--ui-qa-video") && args.contains("--video-fixture")
+            ? ProcessInfo.processInfo.environment["PHOTOTRIAGE_QA_VIDEO_FIXTURE"] : nil)
         if args.contains("--simulate-denied") || startupOverride == "denied" {
             beginWorkspaceTransition()
             isDemo = false; records = []; albums = []; assets = [:]; access = .denied
@@ -129,9 +149,21 @@ final class AppModel: ObservableObject {
             notice = "測試情境：照片權限遭拒絕。可切回範例操作。"
         } else if args.contains("--empty-demo") || startupOverride == "empty" {
             records = []; rebuild(); notice = "測試情境：空照片庫。"
+        } else if let fixturePath {
+            // Explicit test profile: isolated local files, never connected to the user's library.
+            let fixture = URL(fileURLWithPath: fixturePath).standardizedFileURL
+            guard dataRoot.pathComponents.contains(".qa-data"), fixture.pathComponents.contains(".qa-data"),
+                  !args.contains("--connect-photos"), !FileManager.default.fileExists(atPath: dataRoot.appendingPathComponent("photos-review.json").path) else { fatalError("Video fixture requires an isolated QA root") }
+            records = [PhotoRecord(id: "fixture:video-a", kind: .video, duration: 6, width: 320, height: 180, demoScene: 0),
+                       PhotoRecord(id: "fixture:video-b", kind: .video, duration: 6, width: 320, height: 180, demoScene: 1),
+                       PhotoRecord(id: "fixture:missing", kind: .video, demoScene: 2)]
+            videoFixtureURLs = ["fixture:video-a": fixture, "fixture:video-b": fixture]
+            albums = []; assets = [:]; rebuild()
+            notice = "隔離影片測試 · 本機 sample，未連線 Apple 照片"
         } else if startupOverride == nil, reviewRoot == nil, launchState?.profile == .photos {
             connect(requestPermission: false)
         }
+        displayPreferencesReady = true
     }
 
     func loadDemo(recordLaunchProfile: Bool = true) {
@@ -204,7 +236,7 @@ final class AppModel: ObservableObject {
     }
     func resetFilter() {
         filter = PhotoFilter(); useDateRange = false; selected = []; focusedID = nil; travelTripID = nil
-        selectedOrganizerAlbumID = nil; inspectorVisible = false; scrollTargetID = nil
+        selectedOrganizerAlbumID = nil; scrollTargetID = nil
         previousFilter = nil; selectionAnchor = nil
     }
     func setScope(_ scope: ReviewScope) {
@@ -265,7 +297,7 @@ final class AppModel: ObservableObject {
         scrollTargetID = nil
         let ids = Set(visible.map(\.id))
         selected.formIntersection(ids)
-        if let focusedID, !ids.contains(focusedID) { self.focusedID = nil }
+        if let focusedID, !ids.contains(focusedID) { self.focusedID = visible.first(where: { selected.contains($0.id) })?.id }
         workspaceChanged()
     }
     func rebuild() {
@@ -297,21 +329,19 @@ final class AppModel: ObservableObject {
             if selected.contains(id) { selected.remove(id) } else { selected.insert(id) }
             selectionAnchor = id
         } else { selected = [id]; selectionAnchor = id }
-        focusedID = id
-        inspectorVisible = true
+        focusedID = selected.contains(id) ? id : ids.first(where: selected.contains)
     }
     func selectAll() {
         guard !isLoading, !hasModal else { return }
         let items = visible
         selected = Set(items.map(\.id))
         focusedID = items.first?.id
-        inspectorVisible = !items.isEmpty
         selectionAnchor = items.first?.id
         notice = items.isEmpty ? "目前篩選沒有可選取的項目。" : "已全選目前篩選的 \(selected.count) 個項目。"
     }
     func clearSelection() {
         selected = []; focusedID = nil; selectionAnchor = nil
-        inspectorVisible = false; scrollTargetID = nil
+        scrollTargetID = nil
         notice = "已清除選取。"
     }
     func advance(_ offset: Int) {
@@ -349,7 +379,7 @@ final class AppModel: ObservableObject {
         guard commit(next, success: "\(label) · \(target.count) 個項目 · ⌘Z 可復原") else { return }
         if selected.isEmpty, !visible.isEmpty { select(visible[min(oldIndex, visible.count - 1)].id) }
     }
-    func mark(_ status: ReviewStatus) { apply(status.label) { $0.status = status } }
+    func mark(_ status: ReviewStatus) { guard status != .organized else { return }; apply(status.label) { $0.status = status } }
     func addToDeleteQueue() {
         guard canAct else { return }
         apply("加入待刪候選（照片未刪除）") { $0.status = .deleteCandidate }
@@ -358,7 +388,7 @@ final class AppModel: ObservableObject {
         let allTemporary = selectedRecords.allSatisfy { document.decision(for: $0.id).isTemporary }
         apply(allTemporary ? "移除暫時用途" : "標記暫時用途") { $0.isTemporary = !allTemporary }
     }
-    func resetSelected() { apply("恢復未審閱，保留分類歸屬") { $0.status = .unreviewed } }
+    func resetSelected() { apply("清除審閱決策，保留分類歸屬") { $0.status = .unreviewed; $0.isTemporary = false } }
     func stageAlbum(_ plan: AlbumPlan) {
         apply("加入相簿計畫：\(plan.title)") { ReviewEngine.stageAlbum(plan, decision: &$0) }
     }

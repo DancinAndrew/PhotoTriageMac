@@ -13,8 +13,8 @@ patterns = {
     "private key": re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
     "OpenAI key": re.compile(rb"sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{24,}"),
 }
-allowed_roots = {"Sources", "Tests", "Resources", "scripts", ".github"}
-allowed_top = {"Package.swift", "README.md", ".gitignore"}
+allowed_roots = {"Sources", "Tests", "Resources", "scripts", ".github", "docs", "openspec"}
+allowed_top = {"Package.swift", "README.md", "README.zh-TW.md", ".gitignore"}
 private_parts = {".local-data", ".qa-data", ".build", "dist", "deliverables", "verification", ".env", "__pycache__"}
 
 def allowed(path):
@@ -27,8 +27,16 @@ def allowed(path):
         return False
     if path.startswith("Resources/"):
         return path in {"Resources/AppIcon.icns", "Resources/OrganizerInfo.plist", "Resources/Travel/places.json", "Resources/Travel/ATTRIBUTION.txt"}
+    if path == "Tests/PhotoTriageAppTests/Fixtures/video-preview.mp4":
+        return True  # synthetic 6-second test pattern clip
     if path.startswith(("Sources/", "Tests/")):
         return path.endswith(".swift")
+    if path.startswith("docs/images/"):
+        return path.endswith((".png", ".gif"))
+    if path.startswith(("docs/adr/", "openspec/")):
+        return path.endswith(".md")
+    if path.startswith("docs/"):
+        return False
     return path.endswith((".sh", ".py", ".yml", ".yaml"))
 
 def git(*args):

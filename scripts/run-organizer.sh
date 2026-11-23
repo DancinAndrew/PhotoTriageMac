@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 project_root="$(cd "$(dirname "$0")/.." && pwd)"
-bundle="$project_root/dist/Photo Triage Organizer 0.4.0.app"
+bundle="$project_root/dist/Photo Triage Organizer.app"
 if [[ ! -x "$bundle/Contents/MacOS/PhotoTriageMac" ]]; then
     echo "Build first: bash scripts/build-organizer-app.sh release" >&2; exit 2
 fi

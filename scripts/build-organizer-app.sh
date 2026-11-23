@@ -7,7 +7,7 @@ if [[ "$configuration" != "debug" && "$configuration" != "release" ]]; then
 fi
 bash "$project_root/scripts/swiftpm.sh" build -c "$configuration"
 binary_dir="$(bash "$project_root/scripts/swiftpm.sh" build -c "$configuration" --show-bin-path)"
-bundle="$project_root/dist/Photo Triage Organizer 0.4.0.app"
+bundle="$project_root/dist/Photo Triage Organizer.app"
 mkdir -p "$project_root/dist" "$project_root/.local-data/build-backups"
 staging="$(mktemp -d "$project_root/dist/.organizer-build.XXXXXX")"
 trap 'rm -rf "$staging"' EXIT

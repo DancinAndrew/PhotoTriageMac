@@ -1,4 +1,5 @@
 import AppKit
+import AVKit
 import SwiftUI
 import PhotoTriageCore
 import Darwin
@@ -43,7 +44,8 @@ import Darwin
             if simulatedDenied { await verifyDenied(value) }
             else if CommandLine.arguments.contains("--empty-demo") { await verifyEmpty(value) }
             else if CommandLine.arguments.contains("--ui-qa-resume") { await verifyResume(value) }
-            else { await verifyFlows(value) }
+            else if CommandLine.arguments.contains("--ui-qa-video") { await verifyVideoPlayback(value) }
+            else { await verifyDisplayDecisions(value); await verifyFlows(value) }
             finish()
         }
     }
@@ -138,8 +140,93 @@ import Darwin
             try? png.write(to: output.deletingLastPathComponent().appendingPathComponent(name + ".png"))
         }
     }
+    static func verifyDisplayDecisions(_ model: AppModel) async {
+        let before = model.document
+        let first = model.visible[0].id
+        model.inspectorVisible = false
+        _ = await clickPhoto(first)
+        record("closed-inspector-single-selection", !model.inspectorVisible && element("photoInspectorSlot") == nil,
+               method: "actual mouse event in isolated app; panel absent from native hierarchy")
+        _ = await press("selectAllVisible")
+        record("closed-inspector-select-all", model.selected.count == 43 && !model.inspectorVisible && element("photoInspectorSlot") == nil,
+               method: "actual select-all button")
+        _ = await press("toggleInspector")
+        record("inspector-enabled-selection-shows", model.shouldShowInspector && element("photoInspectorSlot") != nil, method: "actual info toggle")
+        _ = await press("clearSelection")
+        record("inspector-enabled-empty-hides", model.inspectorVisible && !model.shouldShowInspector && element("photoInspectorSlot") == nil,
+               method: "actual clear-selection button; preference remains enabled")
+        _ = await clickPhoto(first)
+        _ = await press("closeInspector")
+        _ = await clickPhoto(model.visible[1].id)
+        record("inspector-close-stays-closed-next-selection", !model.inspectorVisible && element("photoInspectorSlot") == nil,
+               method: "actual close and next card buttons")
+        _ = await press("clearSelection"); _ = await clickPhoto(first)
+        for (keyName, button) in [("k", "markKeep"), ("t", "markTemporary"), ("d", "addToDeleteQueue")] {
+            let keyDelivered = await key(keyName)
+            let fromKey = model.document
+            record("decision-\(keyName)-reviewed", keyDelivered && model.progressCount == 1 && model.document.decision(for: first).hasBeenReviewed,
+                   method: "actual native menu shortcut and saved fixture decision")
+            _ = await key("z", flags: .command)
+            _ = await press(button)
+            record("decision-\(keyName)-button-matches-shortcut", model.document.decisions == fromKey.decisions,
+                   method: "actual decision button vs shortcut result")
+            _ = await press("undoOrganizer")
+        }
+        let oBound = await key("o")
+        record("legacy-o-operation-removed", !oBound && model.document == before, method: "actual native menu inventory; no O binding")
+        _ = await press("markTemporary"); _ = await press("resetDecision")
+        record("clear-decision-removes-t-and-reviewed", model.progressCount == 0 && !model.document.decision(for: first).isTemporary,
+               method: "actual T and clear-decision buttons")
+        _ = await press("undoOrganizer"); _ = await press("undoOrganizer")
+        record("decision-batch-undo-restores-original", model.document == before, method: "actual undo buttons; exact fixture document")
+        if let scroll = gallery() {
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: 310)); scroll.reflectScrolledClipView(scroll.contentView); await settle(350)
+            for size in [ThumbnailSize.small, .large, .medium] {
+                let anchor = model.workspaceSnapshot(), selection = model.selected
+                model.setThumbnailSize(size); await settle(700)
+                let persisted = try? DisplayPreferencePersistence.load(from: model.displayPreferenceURL)
+                let positionOK = anchor.anchorID.flatMap { model.galleryFrames[$0] }.map { abs(Double($0.minY) - anchor.anchorOffset) < 35 } ?? false
+                record("thumbnail-\(size.rawValue)-selection-position-preference", model.thumbnailSize == size && model.selected == selection &&
+                    model.pendingViewportRestore == nil && positionOK && persisted?.thumbnailSize == size,
+                    method: "real native grid after picker binding; asset anchor, selection and isolated saved preference",
+                    detail: "anchor restored=\(positionOK), pending=\(model.pendingViewportRestore != nil), expected=\(anchor.anchorOffset), actual=\(anchor.anchorID.flatMap { model.galleryFrames[$0] }?.minY ?? -9999), y=\(model.currentScrollY)")
+            }
+        } else { record("thumbnail-native-gallery", false, method: "native NSScrollView") }
+        for width in [1060.0, 1600.0] {
+            rootWindow?.setContentSize(NSSize(width: width, height: 850)); await settle(250)
+            for size in ThumbnailSize.allCases {
+                model.setThumbnailSize(size); await settle(450)
+                let bounds = rootWindow?.contentView.map { $0.convert($0.bounds, to: nil) } ?? .zero
+                let controlIDs = ["thumbnailSize", "filterMedia", "filterReviewStatus", "filterUnknownDate", "markKeep", "markTemporary", "addToDeleteQueue", "resetDecision", "toggleInspector", "clearAllFilters"]
+                let frames = controlIDs.compactMap { element($0)?.accessibilityFrame() }
+                record("layout-\(Int(width))-\(size.rawValue)", frames.count == controlIDs.count && frames.allSatisfy { $0.width > 0 && bounds.contains($0) },
+                       method: "actual native window/size layout; all essential controls inside content bounds")
+                if width == 1060 { capture("layout-1060-" + size.rawValue) }
+            }
+        }
+        model.setThumbnailSize(.medium); model.inspectorVisible = false; model.clearSelection()
+        if let scroll = gallery() { scroll.contentView.scroll(to: .zero); scroll.reflectScrolledClipView(scroll.contentView) }
+        rootWindow?.setContentSize(NSSize(width: 1320, height: 850)); await settle()
+        record("display-actions-preserve-review", model.document == before, method: "exact isolated review document after all display operations")
+    }
     static func verifyFlows(_ model: AppModel) async {
         record("actual-control-frames", !nodes().isEmpty, method: "own native NSView frame probes; no Accessibility permission needed")
+        record("single-filter-region", element("scope-unclassified") == nil && element("scope-screenshots") == nil &&
+            ["filterMedia", "filterReviewStatus", "filterScreenshots", "filterUnclassified", "filterRapidShots", "filterDateRange", "filterUnknownDate", "filterResultCount", "clearAllFilters"].allSatisfy { element($0) != nil },
+            method: "actual rendered control inventory; sidebar contains source navigation only")
+        _ = await press("filterUnclassified")
+        record("top-unclassified-filter", model.filter.unclassifiedOnly && model.activeFilterChips.contains { $0.kind == .unclassified } && model.visible.allSatisfy { !model.locallyClassifiedIDs.contains($0.id) },
+            method: "actual consolidated checkbox")
+        model.reviewFilterOption = .temporary; await settle()
+        record("top-combined-empty-filter", model.filter.unclassifiedOnly && model.filter.temporaryOnly && model.visible.isEmpty && model.selected.isEmpty,
+            method: "actual review picker binding with unclassified checkbox; fixture has no temporary decisions")
+        _ = await press("clearAllFilters")
+        _ = await press("filterDateRange"); _ = await press("filterUnknownDate")
+        record("top-date-unknown-replacement", !model.useDateRange && model.filter.unknownDateOnly && model.visible.allSatisfy { $0.date == nil },
+            method: "actual date and unknown-time checkboxes; shared filter state")
+        _ = await press("clearAllFilters")
+        record("top-filter-reset-restores-source", model.visible.count == 43 && model.activeFilterChips.isEmpty && model.selectedOrganizerAlbumID == nil && element("filterResultCount") != nil,
+            method: "actual single clear-all action and visible result label")
         let initial = model.document
         let photos = Array(model.visible.filter { $0.kind == .image && $0.demoScene != nil }.prefix(6))
         let first = photos[0].id, second = photos[1].id
@@ -244,7 +331,8 @@ import Darwin
             _ = await press("selectAllVisible")
             _ = await press("addAndCompleteBatch"); await settle(300)
             record("deleted-recent-target-opens-chooser", model.repeatDestinationAlbum == nil && element("cancelLocalAlbum") != nil,
-                   method: "deleted fixture; actual complete button safely opens chooser")
+                   method: "deleted fixture; actual complete button safely opens chooser",
+                   detail: "destination=\(model.repeatDestinationAlbum?.id ?? "nil"), selected=\(model.selected.count), action=\(String(describing: model.albumAction)), cancel=\(element("cancelLocalAlbum") != nil)")
             _ = await press("cancelLocalAlbum")
         }
         _ = await press("clearAllFilters")
@@ -257,7 +345,7 @@ import Darwin
         _ = await press("filterChip-media")
         record("empty-result-chip-recovery", model.visible.count == 5 && model.filter.screenshotsOnly, method: "actual chip removal")
         _ = await press("clearAllFilters"); _ = await clickPhoto(first)
-        _ = await press("closeInspector"); record("inspector-close-preserves-selection", model.selected == [first] && !model.inspectorVisible, method: "actual close button")
+        _ = await press("toggleInspector"); _ = await press("closeInspector"); record("inspector-close-preserves-selection", model.selected == [first] && !model.inspectorVisible, method: "actual close button")
         _ = await press("toggleInspector"); record("inspector-reopen", model.inspectorVisible, method: "actual info button")
         for width in [1060.0, 1600.0] {
             rootWindow?.setContentSize(NSSize(width: width, height: 850)); await settle(250)
@@ -300,6 +388,41 @@ import Darwin
         checks.append(Check(name: "live-photos-permission-and-cloud-preview", status: "not_tested", method: "fictional isolated profile",
                             detail: "No native Photos permission prompt or real-library/iCloud asset read was initiated. Missing previews are covered separately by mock states and unit tests."))
     }
+    static func verifyVideoPlayback(_ model: AppModel) async {
+        guard CommandLine.arguments.contains("--video-fixture"), model.isDemo, model.videoFixtureURLs.count == 2 else {
+            record("video-fixture-isolated", false, method: "guarded fictional local-file profile"); return
+        }
+        let beforeReview = model.document, beforeAlbums = model.localAlbums, beforeSelection = model.selected
+        let videos = model.records.filter { model.videoFixtureURLs[$0.id] != nil }
+        func player() -> AVPlayer? {
+            func walk(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(walk) }
+            return rootWindow?.attachedSheet?.contentView.flatMap { walk($0).compactMap { $0 as? AVPlayerView }.first?.player }
+        }
+        _ = await press("openVideo-\(videos[0].id)"); await settle(450)
+        let first = player(), firstItem = first?.currentItem
+        record("video-single-open-auto-plays", first?.currentTime().seconds ?? 0 > 0.2 && first?.isMuted == true,
+               method: "actual native open button and sample AVPlayer; QA simulates active-app gate", detail: "Local synthetic sample; no Photos or iCloud data.")
+        record("video-no-extra-download-control", element("reloadVideo") != nil && model.videoPreview != nil,
+               method: "actual sheet controls; initial playback already advances before any reload")
+        capture("actual-app-video-autoplay")
+        _ = await press("videoPlayPause"); await settle(150)
+        record("video-pause-control", first?.rate == 0, method: "actual pause button")
+        _ = await press("nextVideo"); await settle(450)
+        let second = player()
+        record("video-switch-auto-muted", second?.currentItem != nil && second?.currentItem !== firstItem && second?.isMuted == true && (second?.currentTime().seconds ?? 0) > 0.2,
+               method: "actual next button; same player, fresh sample item and one playback intent")
+        _ = await press("nextVideo"); await settle(150)
+        record("video-missing-resource-releases-player", second?.currentItem == nil && second?.rate == 0,
+               method: "fictional missing item; actual next button and failure surface")
+        capture("actual-app-video-missing")
+        _ = await press("previousVideo"); await settle(350)
+        _ = await press("closeVideoPreview")
+        record("video-close-releases-item", model.videoPreview == nil && second?.currentItem == nil && second?.rate == 0,
+               method: "actual close button; retained AVPlayer checked after dismissal")
+        record("video-preview-preserves-review-and-selection", model.document == beforeReview && model.localAlbums == beforeAlbums && model.selected == beforeSelection,
+               method: "fixture documents compared; video controls do not classify")
+        checks.append(Check(name: "real-photos-and-physical-drag", status: "not_tested", method: "isolated synthetic sample", detail: "Active gate is simulated; this run cannot validate real Photos, cloud streaming or global/physical mouse input."))
+    }
     static func verifyDenied(_ model: AppModel) async {
         record("denied-access-native-panel", model.access == .denied && !model.isDemo && model.records.isEmpty && element("photosAccessPanel") != nil,
                method: "actual app scene; simulated denied profile; no native prompt invoked")
@@ -324,6 +447,7 @@ import Darwin
               let expected = try? JSONDecoder().decode(WorkspaceState.self, from: data) else { record("reopen-expected-state", false, method: "actual app restart"); return }
         record("reopen-album-and-combined-filters", model.selectedOrganizerAlbumID == expected.organizerAlbumID && model.filter == expected.filter,
                method: "second actual application process; persisted profile")
+        record("reopen-display-preferences", model.thumbnailSize == .medium && model.inspectorVisible, method: "second actual app process; isolated display preferences")
         record("reopen-selection-and-progress", model.selected == expected.selectedIDs && model.progressCount == expected.reviewedCount,
                method: "second actual application process; own review decisions")
         record("reopen-scroll-position", model.pendingViewportRestore == nil && abs(model.currentScrollY - expected.scrollY) < 35,

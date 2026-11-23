@@ -96,10 +96,13 @@ struct PhotoCard: View {
     var body: some View {
         let chosen = model.selected.contains(record.id)
         let decision = model.document.decision(for: record.id)
-        Button { model.select(record.id, modifiers: NSApp.currentEvent?.modifierFlags ?? NSEvent.modifierFlags) } label: {
+        Button {
+            if record.kind == .video, (NSApp.currentEvent?.clickCount ?? 0) == 2 { model.beginVideoPreview(record.id) }
+            else { model.select(record.id, modifiers: NSApp.currentEvent?.modifierFlags ?? NSEvent.modifierFlags) }
+        } label: {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack(alignment: .topTrailing) {
-                    ThumbnailView(record: record, asset: model.assets[record.id]).frame(height: 136).clipped()
+                    ThumbnailView(record: record, asset: model.assets[record.id]).frame(height: model.thumbnailSize.imageHeight).clipped()
                     Image(systemName: chosen ? "checkmark.circle.fill" : "circle")
                         .foregroundStyle(chosen ? Theme.accent : .white.opacity(0.85))
                         .font(.system(size: 19)).background(.white.opacity(chosen ? 1 : 0), in: Circle()).padding(8)
@@ -116,7 +119,7 @@ struct PhotoCard: View {
                         if record.isScreenshot { Image(systemName: "camera.viewfinder") }
                         if record.isFavorite { Image(systemName: "heart.fill") }
                         if decision.isTemporary { Image(systemName: "clock") }
-                        Text(decision.status.label); Spacer(minLength: 0)
+                        Text(decision.displayLabel); Spacer(minLength: 0)
                         if model.locallyClassifiedIDs.contains(record.id) { Image(systemName: "rectangle.stack.fill") }
                         if !decision.albumPlans.isEmpty { Image(systemName: "rectangle.stack.badge.plus") }
                     }.font(.system(size: 9)).foregroundStyle(decision.status == .deleteCandidate ? .red : .secondary)
@@ -129,8 +132,17 @@ struct PhotoCard: View {
                 Color.clear.preference(key: GalleryFramesKey.self,
                                        value: [record.id: geometry.frame(in: .named("galleryViewport"))])
             })
-            .accessibilityLabel("\(record.isScreenshot ? "截圖" : record.kind == .video ? "影片" : "照片")，\(record.date?.formatted() ?? "時間未知")，\(decision.status.label)，\(model.classificationLabel(for: record.id))")
+            .accessibilityLabel("\(record.isScreenshot ? "截圖" : record.kind == .video ? "影片" : "照片")，\(record.date?.formatted() ?? "時間未知")，\(decision.displayLabel)，\(model.classificationLabel(for: record.id))")
             .accessibilityValue(chosen ? "已選取" : "未選取").accessibilityIdentifier("photo-\(record.id)").qaControl("photo-\(record.id)")
+            .overlay(alignment: .topLeading) {
+                if record.kind == .video {
+                    Button { model.beginVideoPreview(record.id) } label: {
+                        Label("開啟影片", systemImage: "play.circle.fill").font(.system(size: 11, weight: .medium))
+                            .padding(6).background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 5)).foregroundStyle(.white)
+                    }.buttonStyle(.plain).padding(7)
+                        .accessibilityIdentifier("openVideo-\(record.id)").qaControl("openVideo-\(record.id)")
+                }
+            }
     }
 }
 
@@ -150,6 +162,11 @@ struct PhotoInspector: View {
                 }
                 ThumbnailView(record: record, asset: model.assets[record.id]).frame(height: 145)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
+                if record.kind == .video {
+                    Button { model.beginVideoPreview(record.id) } label: { Label("開啟影片", systemImage: "play.circle") }
+                        .buttonStyle(.borderedProminent).help("播放、暫停與拖曳进度 · 空白鍵開啟")
+                        .accessibilityIdentifier("inspectorOpenVideo").qaControl("inspectorOpenVideo")
+                }
                 info("拍攝時間", record.date.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "未知")
                 info("位置", record.coordinate?.label ?? "未知（未推測地點）")
                 info("尺寸／類型", "\(record.width) × \(record.height) · \(record.kind == .video ? "影片" : "照片")")
@@ -157,7 +174,7 @@ struct PhotoInspector: View {
                 if record.isFavorite { Label("照片庫中的喜好項目", systemImage: "heart.fill").font(.caption) }
                 Divider()
                 info("人工審閱", decision.hasBeenReviewed ? "已人工審閱" : "未審閱")
-                info("審閱決定", decision.status.label + (decision.isTemporary ? " · 暫時用途" : ""))
+                info("審閱決定", decision.displayLabel)
                 info("待刪候選", decision.isDeletionCandidate ? "是 · 只有本機標記，照片未刪除" : "否")
                 info("分類歸屬", model.classificationLabel(for: record.id))
                 info("事件", model.group(for: record)?.title ?? "未分組")

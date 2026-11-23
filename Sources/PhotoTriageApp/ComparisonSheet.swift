@@ -43,7 +43,7 @@ struct ComparisonSheet: View {
                             HStack {
                                 keepButton(record, index: index)
                                 Spacer()
-                                Text("原標記：\(model.document.decision(for: record.id).status.label)").font(.caption2).foregroundStyle(.secondary)
+                                Text("原標記：\(model.document.decision(for: record.id).displayLabel)").font(.caption2).foregroundStyle(.secondary)
                             }
                         }.padding(10).background(keepers.contains(record.id) ? Theme.accent.opacity(0.08) : .white,
                                                    in: RoundedRectangle(cornerRadius: 10))

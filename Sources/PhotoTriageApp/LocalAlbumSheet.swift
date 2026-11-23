@@ -22,7 +22,7 @@ struct LocalAlbumSheet: View {
         case .rename: return "重新命名相簿"
         case .delete: return "移除本機相簿"
         case .addSelection: return "加入相簿"
-        case .addSelectionAndComplete: return "加入相簿並完成這批"
+        case .addSelectionAndComplete: return "加入相簿並保留"
         }
     }
     var body: some View {
@@ -52,7 +52,7 @@ struct LocalAlbumSheet: View {
                 Text("分類調整儲存在本機，尚未同步到 Apple 照片。照片仍留在全部照片與其他相簿。")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if isAdding {
-                    Text("只加入：審閱狀態不變。加入並完成：只把這批的未審閱改為已完成，保留既有保留／待刪標記；⌘Z 一起復原歸屬與審閱。")
+                    Text("只加入：審閱決策不變。加入並保留：未決策項目標為保留 K，既有 K／T／D 與舊版紀錄保留；⌘Z 一起復原相簿與決策。")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     if !model.recentDestinationAlbums.isEmpty {
                         HStack {
@@ -81,7 +81,7 @@ struct LocalAlbumSheet: View {
                         .keyboardShortcut(action == .addSelection ? KeyboardShortcut.defaultAction : nil)
                         .disabled(!model.canManageAlbums || model.actionableAlbumIDs.isEmpty)
                         .accessibilityIdentifier("confirmLocalAlbum").qaControl("confirmLocalAlbum")
-                    Button("加入並完成這批") { save(completeReview: true) }.buttonStyle(.borderedProminent)
+                    Button("加入並保留") { save(completeReview: true) }.buttonStyle(.borderedProminent)
                         .keyboardShortcut(action == .addSelectionAndComplete ? KeyboardShortcut.defaultAction : nil)
                         .disabled(!model.canManageAlbums || model.actionableAlbumIDs.isEmpty)
                         .accessibilityIdentifier("confirmAlbumAndComplete").qaControl("confirmAlbumAndComplete")

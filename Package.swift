@@ -9,7 +9,7 @@ let package = Package(
         .target(name: "PhotoTriageCore"),
         .executableTarget(name: "PhotoTriageApp", dependencies: ["PhotoTriageCore"]),
         .testTarget(name: "PhotoTriageCoreTests", dependencies: ["PhotoTriageCore"]),
-        .testTarget(name: "PhotoTriageAppTests", dependencies: ["PhotoTriageApp"])
+        .testTarget(name: "PhotoTriageAppTests", dependencies: ["PhotoTriageApp"], resources: [.copy("Fixtures")])
     ],
     swiftLanguageModes: [.v5]
 )

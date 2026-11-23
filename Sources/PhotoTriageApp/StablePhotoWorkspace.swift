@@ -16,15 +16,18 @@ extension EnvironmentValues {
     }
 }
 
-/// The inspector always owns the same width. Selection never changes the grid proposal.
+/// The grid uses the entire workspace unless information is enabled with a selected photo.
 struct StablePhotoWorkspace: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.galleryFrameReporter) private var reportFrames
     var body: some View {
         HStack(spacing: 0) {
             grid.frame(maxWidth: .infinity, maxHeight: .infinity)
-            Divider()
-            inspector.frame(width: 248).frame(maxHeight: .infinity, alignment: .top)
+            if model.shouldShowInspector, let record = model.focusedRecord {
+                Divider()
+                PhotoInspector(record: record).frame(width: 248).frame(maxHeight: .infinity, alignment: .top)
+                    .accessibilityIdentifier("photoInspectorSlot").qaControl("photoInspectorSlot")
+            }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
             .onPreferenceChange(GalleryFramesKey.self) { model.recordGalleryFrames($0); reportFrames?($0) }
     }
@@ -39,7 +42,7 @@ struct StablePhotoWorkspace: View {
                             Button("全部照片") { model.setScope(.all) }
                         }.frame(width: geometry.size.width).padding(.vertical, 95)
                     } else {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 166, maximum: 225), spacing: 14)], spacing: 16) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: model.thumbnailSize.minimumWidth, maximum: model.thumbnailSize.maximumWidth), spacing: 14)], spacing: 16) {
                             ForEach(model.visible) { record in
                                 PhotoCard(record: record).id(record.id)
                             }
@@ -53,7 +56,7 @@ struct StablePhotoWorkspace: View {
                         // Only explicit keyboard navigation requests scrolling, never a mouse click or Select All.
                         if let id { proxy.scrollTo(id, anchor: .center) }
                     }
-                    .task(id: model.viewportAnchorToMount) {
+                    .task(id: model.viewportAnchorToMount.map { $0 + ":" + model.thumbnailSize.rawValue + ":" + String(model.shouldShowInspector) }) {
                         guard let id = model.viewportAnchorToMount else { return }
                         // Mount distant lazy rows first, then restore the saved offset once.
                         proxy.scrollTo(id, anchor: .top)
@@ -62,22 +65,5 @@ struct StablePhotoWorkspace: View {
                     }
             }
         }
-    }
-    private var inspector: some View {
-        Group {
-            if model.inspectorVisible, let record = model.focusedRecord {
-                PhotoInspector(record: record)
-            } else {
-                VStack(alignment: .leading, spacing: 14) {
-                    Text("照片資訊").font(.system(size: 13, weight: .semibold))
-                    Text(model.focusedRecord == nil ? "選取照片查看資訊。" : "照片資訊已收合。")
-                        .font(.callout).foregroundStyle(.secondary)
-                    if model.focusedRecord != nil {
-                        Button("顯示照片資訊") { model.inspectorVisible = true }.accessibilityIdentifier("showInspector").qaControl("showInspector")
-                    }
-                    Spacer()
-                }.padding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            }
-        }.background(.white.opacity(0.65)).accessibilityIdentifier("photoInspectorSlot").qaControl("photoInspectorSlot")
     }
 }

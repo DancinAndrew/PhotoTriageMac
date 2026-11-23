@@ -9,7 +9,7 @@ extension AppModel {
         flushWorkspace()
         workspaceSaveTask?.cancel(); workspaceSaveTask = nil
         workspaceReady = false; pendingViewportRestore = nil; galleryFrames = [:]; currentScrollY = 0
-        viewportAnchorToMount = nil; viewportAnchorMountCompleted = false
+        viewportAnchorToMount = nil; viewportAnchorMountCompleted = false; viewportReflowBaseline = nil
     }
     func workspaceChanged() {
         guard workspaceReady, workspaceError == nil, pendingViewportRestore == nil else { return }
@@ -68,7 +68,7 @@ extension AppModel {
                 let ids = Set(visible.map(\.id))
                 selected = state.selectedIDs.intersection(ids)
                 focusedID = state.focusedID.flatMap { ids.contains($0) ? $0 : nil }
-                inspectorVisible = state.inspectorVisible && focusedID != nil
+                inspectorVisible = lastDisplayPreferences?.inspectorEnabled ?? state.inspectorVisible
                 var position = state
                 if let anchor = position.anchorID, !ids.contains(anchor) { position.anchorID = nil }
                 pendingViewportRestore = position.scrollY > 0 || position.anchorID != nil ? position : nil
@@ -80,12 +80,20 @@ extension AppModel {
         } catch { workspaceError = "工作位置無法讀取，已保留原檔：\(error.localizedDescription)" }
     }
     func recordGalleryFrames(_ frames: [String: CGRect]) {
+        if let baseline = viewportReflowBaseline {
+            // Reflow restoration must not consume frames from the previous layout proposal.
+            let changed = frames.contains { id, frame in
+                guard let old = baseline[id] else { return false }
+                return abs(frame.width - old.width) > 0.5 || abs(frame.height - old.height) > 0.5 || abs(frame.minX - old.minX) > 0.5
+            }
+            if changed { viewportReflowBaseline = nil }
+        }
         galleryFrames = frames
         viewportRestoreHandler?()
         workspaceChanged()
     }
     func completeViewportRestore(at y: Double) {
-        currentScrollY = max(0, y); pendingViewportRestore = nil; viewportAnchorToMount = nil; workspaceChanged()
+        currentScrollY = max(0, y); viewportReflowBaseline = nil; pendingViewportRestore = nil; viewportAnchorToMount = nil; workspaceChanged()
     }
     func completeAnchorMount(_ id: String) {
         guard viewportAnchorToMount == id, pendingViewportRestore?.anchorID == id else { return }

@@ -34,7 +34,7 @@ struct GalleryScrollPersistence: NSViewRepresentable {
             restore()
         }
         func restore() {
-            guard let model, let scroll, let state = model.pendingViewportRestore,
+            guard let model, model.viewportReflowBaseline == nil, let scroll, let state = model.pendingViewportRestore,
                   let document = scroll.documentView, document.bounds.height > 0, scroll.contentView.bounds.height > 0 else { return }
             var y = state.scrollY
             if let id = state.anchorID {
